@@ -31,6 +31,14 @@
   (maphash (function (lambda (key val) (setq l (cons val l)))) hsh)
   l))
 
+(defun obj-from-path (from path)
+"Given a path, select the corresponding object in sexp 'from'"
+(while path
+  (setq from (nth (car path) from)
+	path (cdr path)))
+from)
+
+
 (defconst varkind 0)
 (defconst predkind 1)
 (defconst funckind 2)
@@ -128,7 +136,7 @@ Returns the string created."
 
 
 
-(defun translate (otter-list sign)
+(defun translate (orig-list sign)
   "Translate a piece of Otter proof object into Mizar,
 return list of Mizar steps. and lists of vars,preds and funcs used.
 Input clauses have no justification,
@@ -136,7 +144,7 @@ Instantiate steps are justified by their parent,
 Resolve steps are justified by parents,
 Propsitional by parents.
 "
-  (let (out assumptions)
+  (let ((otter-list orig-list) out assumptions)
     (while otter-list
       (let* ((in (car otter-list))
 	     (mylab (concat "A" (int-to-string (car in)) ": "))
@@ -150,15 +158,69 @@ Propsitional by parents.
 	     (fact (if vars (concat "for " varsstr " holds " (car factandsyms))
 		     (car factandsyms)))
 	     res)
-	(if (eq rule 'input)
-	    (setq assumptions (cons fact assumptions)
-		  res (concat "assume " mylab fact))
-	  (setq res (concat mylab fact)))
-	(if refs
-	    (setq res (concat res " by " 
-			      (mapconcat '(lambda (x) (concat "A" (int-to-string x)))
-					 refs ","))))
-	
+	(cond ((eq rule 'input)
+	       (setq assumptions (cons fact assumptions)
+		     res (concat "assume " mylab fact)))
+;; Resolution handling
+	      ((eq rule 'resolve) ;; we need to chase only one ancestor
+	       (let* ((paths (delete-if  'numberp (copy-sequence (cdr justif))))
+		      (ref1 (caddr (nth (- (car refs) 1) orig-list)))
+		      (lit1 (obj-from-path ref1 (car paths)))
+		      (res1 (fla2miz lit1 sign))
+		      (vars1 (second res1)))
+		 (cond ((not vars1)   
+;; without vars, happy - simple kustif
+			(setq res (concat mylab fact " by " 
+					  (mapconcat '(lambda (x) 
+							(concat "A" (int-to-string x)))
+						     refs ","))))
+;; ok, the needed vars are in result
+		       ((subsetp vars1 vars)   
+			(let* ((fs1 (fla2miz ref1 sign))
+			       (restvars (set-difference (second fs1) vars))
+			       (restvstr (mapconcat 'identity restvars ","))
+			       (inter (if restvars 
+					  (concat "for " restvstr " holds " (car fs1))
+					(car fs1))))
+			  ;; THis is a proof - hopefully
+			  (setq res (concat mylab fact "\nproof let " varsstr ";\n"
+					    inter " by A" (int-to-string (car refs))
+					    ";\nhence thesis by A" 
+					    (int-to-string (second refs)) ";\nend;"))))
+;; Now result remove the needed var - have to cheat by adding it
+		       (t   
+			(let* ((addvars (set-difference vars1 vars))
+			       (letvsstr (mapconcat 'identity (union vars1 vars) ","))
+			       (fs1 (fla2miz ref1 sign))
+			       (restvars (set-difference (second fs1) addvars))
+			       (restvstr (mapconcat 'identity restvars ","))
+			       (inter (if restvars 
+					  (concat "for " restvstr " holds " (car fs1))
+					(car fs1))))
+			  (setq res (concat mylab fact "\nproof\n now let " letvsstr 
+					    ";\n" inter " by A" 
+					    (int-to-string (car refs)) ";\n"
+					    "hence " (car factandsyms) " by A" 
+					    (int-to-string (second refs)) ";\nend;\n"
+					    "hence thesis;\nend;")))))))
+
+;; ((eq rule 'resolve) ;; we need to chase only one ancestor
+;; 	       (let* ((paths (set-difference (cdr justif) refs))
+;; 		      (ref1 (nth (- (car refs) 1) orig-list))
+;; 		      (ref2 (nth (- (second refs) 1) orig-list))
+;; 		      (lit1 (obj-from-path ref1 (car paths)))
+;; 		      (lit2 (obj-from-path ref2 (second paths)))
+;; 		      (res1 (fla2miz lit1 sign))
+;; 		      (res2 (fla2miz lit2 sign))
+;; 		      (vars1 (second res1))
+;; 		      (vars2 (second res2)))
+	      (t
+	       (setq res (concat mylab fact))
+	       (if refs
+		   (setq res (concat res " by " 
+				     (mapconcat '(lambda (x) 
+						   (concat "A" (int-to-string x)))
+						refs ","))))))
 	(setq  res (concat res ";\n")
 	       otter-list (cdr otter-list)
 	       out (cons res out))))
