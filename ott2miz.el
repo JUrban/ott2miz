@@ -161,23 +161,29 @@ kind is either 'pred' or 'func'"
        (defbody " means not contradiction;\n")
        (justif (if (equal kind "func") "correctness by ASS;\n"
 		 "correctness;\n"))
+       (leftbrack "")
+       (rightbrack "")
        step res)
   (while al
     (if (= prev (cdar al))
-	(setq step (concat kind " " (caar al) locivars defbody justif)
+	(setq step (concat kind " " (caar al) leftbrack locivars rightbrack 
+			   defbody justif)
 	      res (cons step res))
       
       (let (l addedloci)
 	(while (< prev (cdar al))
 	  (setq l (cons (concat "x" (int-to-string (+ 1 prev))) l)
 		prev (+ 1 prev)))
+	(if (equal kind "func")
+	    (setq leftbrack "(" rightbrack ")"))
 	(setq addedloci (mapconcat 'identity (nreverse l) ",")
 	      step (concat "let " addedloci " be set;\n")
 	      res (cons step res)
 	      locivars (if (equal "" locivars) 
 			   (concat " " addedloci)
-			 (concat locivars "," addedloci))
-	      step (concat kind " " (caar al) locivars defbody justif)
+			 (concat  locivars "," addedloci))
+	      step (concat kind " " (caar al) leftbrack locivars rightbrack 
+			   defbody justif)
 	      res (cons step res))))
     (setq al (cdr al)))
   (nreverse res)))
@@ -193,18 +199,27 @@ kind is either 'pred' or 'func'"
       (let* ((pos (- max-line-length 1))
 	     (bad (car lines))
 	     (total (- (length bad) 1))
-	     (start 0))
+	     (start 0) (splitchar 32))
 	(while (< start total)
 	  (if (< (- total start) max-line-length)
 	      (progn
 		(insert (substring bad start) "\n")
 		(setq start total))
-	    (while (and (not (eq (aref bad pos) 32)) (<= start  pos))
+	    (while (and (not (eq (aref bad pos) splitchar)) (<= start  pos))
 	      (decf pos))
-	    (if (< pos start) (error (concat "Unsplittable line: " bad)))
-	    (insert (substring bad start pos) "\n")
-	    (setq start pos 
-		  pos (min (+ pos max-line-length) total))))))
+	    (if (<= pos start) 
+		(cond ((eq splitchar 32)
+		       (setq splitchar 44
+			     pos (min (+ start max-line-length) total)))
+		      ((eq splitchar 44)
+		       (setq splitchar 40
+			  pos (min (+ start max-line-length) total)))
+		      (t
+		       (error (concat "Unsplittable line: " bad))))
+	      (setq splitchar 32)
+	      (insert (substring bad start pos) "\n")
+	      (setq start pos 
+		    pos (min (+ pos max-line-length) total)))))))
     (setq lines (cdr lines)))))
 	      
 
@@ -269,3 +284,28 @@ kind is either 'pred' or 'func'"
       (mizinsert "end;\n")
       (save-buffer))    
     ))
+
+
+(defun translate-file (fname)
+  "Takes care of TPTP and Mizar filenames too"
+  (let* ((dir (file-name-directory fname))
+	 (name (file-name-nondirectory fname))
+	 (name1 (file-name-sans-extension name)))
+    (string-match "\\([a-z0-9]+\\).*" name1)
+    (let ((mizname (downcase (match-string 1 name1))))
+      (with-temp-buffer
+	(insert-file-contents-literally fname)
+	(goto-char (point-min))
+	(ott2miz (read (current-buffer)) mizname)))))
+
+(defun translate-many (indexname)
+"Translate files from index"
+(save-excursion
+  (find-file indexname)
+  (let ((names (split-string (buffer-string) "\n")))
+    (while names
+      (translate-file (car names))
+      (setq names (cdr names))))))
+
+
+
