@@ -1,19 +1,19 @@
- (
- (1 (input) (or (animal v0) (not (wolf v0))) (1))
- (2 (input) (or (animal v0) (not (fox v0))) (2))
- (3 (input) (or (animal v0) (not (bird v0))) (3))
- (4 (input) (or (animal v0) (not (snail v0))) (5))
- (5 (input) (or (plant v0) (not (grain v0))) (6))
- (6 (input) (or (eats v0 v1) (or (eats v0 v2) (or (not (animal v0)) (or (not (plant v1)) (or (not (animal v2)) (or (not (plant v3)) (or (not (much_smaller v2 v0)) (not (eats v2 v3))))))))) (7))
- (7 (input) (or (much_smaller v0 v1) (or (not (snail v0)) (not (bird v1)))) (9))
- (8 (input) (or (much_smaller v0 v1) (or (not (bird v0)) (not (fox v1)))) (10))
- (9 (input) (or (much_smaller v0 v1) (or (not (fox v0)) (not (wolf v1)))) (11))
- (10 (input) (or (not (wolf v0)) (or (not (grain v1)) (not (eats v0 v1)))) (13))
- (11 (input) (or (not (bird v0)) (or (not (snail v1)) (not (eats v0 v1)))) (15))
- (12 (input) (or (plant (snail_food_of v0)) (not (snail v0))) (18))
- (13 (input) (or (eats v0 (snail_food_of v0)) (not (snail v0))) (19))
- (14 (input) (or (not (animal v0)) (or (not (animal v1)) (or (not (grain v2)) (or (not (eats v0 v1)) (not (eats v1 v2)))))) (20))
- (15 (instantiate 6 ((v1 . v3))) (or (eats v0 v3) (or (eats v0 v2) (or (not (animal v0)) (or (not (plant v3)) (or (not (animal v2)) (or (not (plant v3)) (or (not (much_smaller v2 v0)) (not (eats v2 v3))))))))) NIL)
+;;  (
+;;  (1 (input) (or (animal v0) (not (wolf v0))) (1))
+;;  (2 (input) (or (animal v0) (not (fox v0))) (2))
+;;  (3 (input) (or (animal v0) (not (bird v0))) (3))
+;;  (4 (input) (or (animal v0) (not (snail v0))) (5))
+;;  (5 (input) (or (plant v0) (not (grain v0))) (6))
+;;  (6 (input) (or (eats v0 v1) (or (eats v0 v2) (or (not (animal v0)) (or (not (plant v1)) (or (not (animal v2)) (or (not (plant v3)) (or (not (much_smaller v2 v0)) (not (eats v2 v3))))))))) (7))
+;;  (7 (input) (or (much_smaller v0 v1) (or (not (snail v0)) (not (bird v1)))) (9))
+;;  (8 (input) (or (much_smaller v0 v1) (or (not (bird v0)) (not (fox v1)))) (10))
+;;  (9 (input) (or (much_smaller v0 v1) (or (not (fox v0)) (not (wolf v1)))) (11))
+;;  (10 (input) (or (not (wolf v0)) (or (not (grain v1)) (not (eats v0 v1)))) (13))
+;;  (11 (input) (or (not (bird v0)) (or (not (snail v1)) (not (eats v0 v1)))) (15))
+;;  (12 (input) (or (plant (snail_food_of v0)) (not (snail v0))) (18))
+;;  (13 (input) (or (eats v0 (snail_food_of v0)) (not (snail v0))) (19))
+;;  (14 (input) (or (not (animal v0)) (or (not (animal v1)) (or (not (grain v2)) (or (not (eats v0 v1)) (not (eats v1 v2)))))) (20))
+;;  (15 (instantiate 6 ((v1 . v3))) (or (eats v0 v3) (or (eats v0 v2) (or (not (animal v0)) (or (not (plant v3)) (or (not (animal v2)) (or (not (plant v3)) (or (not (much_smaller v2 v0)) (not (eats v2 v3))))))))) NIL)
 
 
 (defun term2miz (term)
@@ -142,62 +142,72 @@ Propsitional by parents.
 :: by ott2miz
 environ
 ")
+(defvar def-header "definition\n  assume ASS: contradiction;\n")
+(defvar def-footer "end;\n\n" )
+ 
 
-
-
-(defun sort-for-arity (alist)
-"Returns a list of lists of the same arities,
-each of the intarnal lists headed by the arity."
-  (sort alist (function (lambda (x y) (< (cdr x) (cdr y)))))
-  (if alist
-      (let ((prev (cdar alist))
-	    l1 res)
-	(while alist
-	  (if (= prev (cdar alist))
-	      (setq l1 (cons (caar alist) l1))
-	    (setq l1 (cons prev l1)
-		  prev (cdar alist)
-		  res (cons l1 res)
-		  l1 (list (caar alist))))
-	  (setq alist (cdr alist)))
-	(setq l1 (cons prev l1)
-	      res (cons l1 res))
-	(nreverse res))))
-    
-	    
 (defun create-def-steps (aritylist kind)
 "Creates a list of definitional steps, aritylist is nonempty,
 kind is either 'pred' or 'func'"
 (let* ((al (sort aritylist (function (lambda (x y) (< (cdr x) (cdr y))))))
        (prev 0) 
        (locivars "")
+       (defbody " means not contradiction;\n")
+       (justif (if (equal kind "func") "correctness by ASS;\n"
+		 "correctness;\n"))
        step res)
   (while al
     (if (= prev (cdar al))
-	(setq step (concat kind " " (caar al) locivars " means not contradiction;\n"
-			   "correctness by ASS;\n")
+	(setq step (concat kind " " (caar al) locivars defbody justif)
 	      res (cons step res))
       
       (let (l addedloci)
 	(while (< prev (cdar al))
-	  (setq l (cons (concat "x" (int-to-string (+ 1 prev))))
+	  (setq l (cons (concat "x" (int-to-string (+ 1 prev))) l)
 		prev (+ 1 prev)))
 	(setq addedloci (mapconcat 'identity (nreverse l) ",")
 	      step (concat "let " addedloci " be set;\n")
 	      res (cons step res)
-	      locivars (concat locivars "," addedloci)
-	      step (concat kind " " (caar al) locivars " means not contradiction;\n"
-			   "correctness by ASS;\n")
+	      locivars (if (equal "" locivars) 
+			   (concat " " addedloci)
+			 (concat locivars "," addedloci))
+	      step (concat kind " " (caar al) locivars defbody justif)
 	      res (cons step res))))
     (setq al (cdr al)))
   (nreverse res)))
 
-  
-		    
+(defvar max-line-length 70)
 
-(defvar def-header "definition\n  assume ASS: contradiction;\n")
-(defvar def-footer "end;\n\n" )
-  
+(defun mizinsert (&rest args)
+"Like insert, but watches for line length"
+(let ((lines (split-string (mapconcat 'identity args "") "\n")))
+  (while lines
+    (if (<= (length (car lines)) max-line-length)
+	(insert (car lines) "\n")
+      (let* ((pos (- max-line-length 1))
+	     (bad (car lines))
+	     (total (- (length bad) 1))
+	     (start 0))
+	(while (< start total)
+	  (if (< (- total start) max-line-length)
+	      (progn
+		(insert (substring bad start) "\n")
+		(setq start total))
+	    (while (and (not (eq (aref bad pos) 32)) (<= start  pos))
+	      (decf pos))
+	    (if (< pos start) (error (concat "Unsplittable line: " bad)))
+	    (insert (substring bad start pos) "\n")
+	    (setq start pos 
+		  pos (min (+ pos max-line-length) total))))))
+    (setq lines (cdr lines)))))
+	      
+	  
+
+
+
+
+
+
 
 (defun ott2miz (otter-list articlename)
   "Prints the .miz and .voc file for the proof object"
@@ -208,41 +218,40 @@ kind is either 'pred' or 'func'"
 	 (funcs (fourth trans))
 	 (mizbuf (find-file-noselect (concat articlename ".miz")))
 	 (vocbuf (find-file-noselect (concat articlename ".voc"))))
-    (with-current-buffer mizbuf
-      (erase-buffer)
-      (insert translation-header)
-      (insert "vocabulary " articlename ";\n" "begin\n\n")
-      (if vars 
-	  (insert "reserve " (mapconcat 'identity vars ",") "\n for set;\n\n"))
-;; Function defs
-      (let ((arlist (sort-for-arity funcs)))
-	(if arlist 
-	    (let ((funcdefs (create-funcdef-steps arlist)))
-	      (insert def-header)
-	      (while arlist
-		(insert (car arlist))
-		(setq arlist (cdr arlist)))
-	      (insert def-footer))))
-;; Predicate defs
-      (let ((arlist (sort-for-arity preds)))
-	(if arlist 
-	    (let ((preddefs (create-preddef-steps arlist)))
-	      (insert def-header)
-	      (while arlist
-		(insert (car arlist))
-		(setq arlist (cdr arlist)))
-	      (insert def-footer))))	
-      (while steps 
-	(insert (car steps))
-	(setq steps (cdr steps)))
-      (save-buffer))
     (with-current-buffer vocbuf
       (erase-buffer)
-      (while funcs 
-	(insert "O" (caar funcs) "\n")
-	(setq funcs (cdr funcs)))
-      (while preds 
-	(insert "R" (caar preds) "\n")
-	(setq preds (cdr preds)))
-      (save-buffer))
+      (let ((f funcs) (p preds))
+	(while f
+	  (mizinsert "O" (caar f) "\n")
+	  (setq f (cdr f)))
+	(while p
+	  (mizinsert "R" (caar p) "\n")
+	  (setq p (cdr p)))
+	(save-buffer)))
+      (with-current-buffer mizbuf
+      (erase-buffer)
+      (mizinsert translation-header)
+      (mizinsert "vocabulary " (upcase articlename) ";\n" "begin\n\n")
+      (if vars 
+	  (mizinsert "reserve " (mapconcat 'identity vars ",") "\n for set;\n\n"))
+;; Function defs
+      (if funcs
+	  (let ((funcdefs (create-def-steps funcs "func")))
+	    (mizinsert def-header)
+	    (while funcdefs
+	      (mizinsert (car funcdefs))
+	      (setq funcdefs (cdr funcdefs)))
+	    (mizinsert def-footer)))
+;; Predicate defs
+      (if preds 
+	  (let ((preddefs (create-def-steps preds "pred")))
+	    (mizinsert def-header)
+	    (while preddefs
+	      (mizinsert (car preddefs))
+	      (setq preddefs (cdr preddefs)))
+	    (mizinsert def-footer)))
+      (while steps 
+	(mizinsert (car steps))
+	(setq steps (cdr steps)))
+      (save-buffer))    
     ))
