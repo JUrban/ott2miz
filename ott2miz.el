@@ -22,6 +22,14 @@
 (setq max-lisp-eval-depth 2000)
 (setq max-specpdl-size 2000)
 
+
+(defvar mizar-syms '(and antonym attr as assume be begin being canceled case cases cluster coherence compatibility consider consistency constructors contradiction correctness clusters def deffunc definition definitions defpred environ equals ex existence for func given hence  requirements holds if iff implies irreflexivity it let means mode not notation of or otherwise  over per pred provided qua reconsider redefine reflexivity reserve scheme schemes signature struct such suppose synonym take that thus then theorems vocabulary where associativity commutativity connectedness irreflexivity reflexivity symmetry uniqueness transitivity idempotence asymmetry projectivity involutiveness by from proof now end hereby for ex not & or implies iff st holds being theorem scheme definition thesis empty in))
+
+
+
+
+
+
 (defun int-or-symbol-name (obj)
 (if (symbolp obj) (symbol-name obj)
   (int-to-string obj)))
@@ -42,6 +50,7 @@ from)
 (defconst varkind 0)
 (defconst predkind 1)
 (defconst funckind 2)
+(defconst mizkind 3)
 
 (defun sgn-insert (obj sign kind &optional arity)
 "Insert symbol or int into a signature, fix possible clashes.
@@ -52,8 +61,9 @@ Returns the string created."
     (let ((varres (gethash obj (elt sign varkind)))
 	  (predres (gethash obj (elt sign predkind)))
 	  (funcres (gethash obj (elt sign funckind)))
+	  (mizres (gethash obj (elt sign mizkind)))
 	  (name (int-or-symbol-name obj)))
-      (if (or varres predres funcres)
+      (if (or varres predres funcres mizres)
 	  (setq name (concat name "__" (int-to-string kind))))
       (puthash obj (if arity (cons name arity) name) 
 	       (elt sign kind))
@@ -329,6 +339,7 @@ kind is either 'pred' or 'func'"
       (maphash 
        (function (lambda (key val) (mizinsert "R" (car val) "\n")))
        preds)
+      (set-buffer-modified-p t)
       (save-buffer))
 ;; Miz file
     (with-current-buffer mizbuf
@@ -369,22 +380,54 @@ kind is either 'pred' or 'func'"
 	(setq steps (cdr steps)))
 ;; End of proof
       (mizinsert "end;\n")
+      (set-buffer-modified-p t)
       (save-buffer))
     (kill-buffer mizbuf)
     (kill-buffer vocbuf)
     ))
 
 
-(defun translate-file (fname)
-  "Takes care of TPTP and Mizar filenames too"
+(defun create-name-hash (syms)
+(let ((res (make-hash-table :size (length syms))))
+  (while syms 
+    (puthash (car syms) (symbol-name (car syms)) res)
+    (setq syms (cdr syms)))
+  res))
+
+
+(defvar allowed-chars "abcdefghijklopqrstuvwxyz")
+
+(defun gen-new-name (mizname used)
+"Try to generate a name which is not used."
+(let ((i 0) (new (copy-sequence mizname)))
+  (while (and (< i (length allowed-chars))
+	      (aset new 6 (aref allowed-chars i))
+	      (gethash new used))
+    (incf i))
+  (if (= i (length allowed-chars)) mizname
+    new)))
+
+(defun translate-file (fname &optional usednames mizsymbs)
+  "Takes care of TPTP and Mizar filenames too,
+if usednames given, tries to provide a new name if conflict,
+if mizsymbs given, the hash of mizar syms is not created here."
   (let* ((dir (file-name-directory fname))
 	 (name (file-name-nondirectory fname))
 	 (name1 (file-name-sans-extension name))
-	 (sign  (list (makehash) (makehash) (makehash))))
+	 (sign  (list (makehash) (makehash) (makehash)
+		      (if mizsymbs mizsymbs 
+			(create-name-hash mizar-syms)))))
     (string-match "\\([A-Z0-9]+[+-][0-9]+\\).*" name1)
     (let ((mizname (downcase (match-string 1 name1))))
 ;; take care of [+-] by replacing with [pm]
       (aset mizname 6 (if (eq (aref mizname 6) 45) 109 112))
+      (if (< 8 (length mizname)) 
+	  (setq mizname (substring mizname 0 8)))
+      (if usednames
+	  (progn
+	    (if (gethash mizname usednames)
+		(setq mizname (gen-new-name mizname usednames)))
+	    (puthash mizname name1 usednames)))
       (with-temp-buffer
 	(insert-file-contents-literally fname)
 	(goto-char (point-min))
@@ -394,9 +437,11 @@ kind is either 'pred' or 'func'"
 "Translate files from index"
 (save-excursion
   (find-file indexname)
-  (let ((names (split-string (buffer-string) "\n")))
+  (let* ((names (split-string (buffer-string) "\n"))
+	 (used (make-hash-table :size (length names) :test 'equal))
+	 (mizsymbs (create-name-hash mizar-syms)))
     (while names
-      (translate-file (car names))
+      (translate-file (car names) used mizsymbs)
       (setq names (cdr names))))))
 
 
