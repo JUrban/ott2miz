@@ -50,22 +50,23 @@ from)
 (defconst varkind 0)
 (defconst predkind 1)
 (defconst funckind 2)
-(defconst mizkind 3)
+(defconst locikind 3)
+(defconst mizkind 4)
 
 (defun sgn-insert (obj sign kind &optional arity)
 "Insert symbol or int into a signature, fix possible clashes.
 Kind is 0 ('var), 1('pred), 2 ('func) .
 Returns the string created."
 (let ((res (gethash obj (elt sign kind))))
-  (if res (if (eq kind varkind) res (car res))
-    (let ((varres (gethash obj (elt sign varkind)))
-	  (predres (gethash obj (elt sign predkind)))
-	  (funcres (gethash obj (elt sign funckind)))
-	  (mizres (gethash obj (elt sign mizkind)))
-	  (name (int-or-symbol-name obj)))
-      (if (or varres predres funcres mizres)
+  (if res (if arity (car res) res)
+    (let ((name (int-or-symbol-name obj)))
+      (if (or (gethash obj (elt sign varkind))
+	      (gethash obj (elt sign predkind))
+	      (gethash obj (elt sign funckind))
+	      (gethash obj (elt sign locikind))
+	      (gethash obj (elt sign mizkind)))	 
 	  (setq name (concat name "__" (int-to-string kind))))
-      (puthash obj (if arity (cons name arity) name) 
+      (puthash obj (if arity (cons name arity) name)
 	       (elt sign kind))
       name))))
 
@@ -212,7 +213,7 @@ Propsitional by parents.
 					    (int-to-string (second refs)) ";\nend;\n"
 					    "hence thesis;\nend")))))))
 
-;; ((eq rule 'resolve) ;; we need to chase only one ancestor
+;;	      ((eq rule 'paramod) ;; we need to chase only one ancestor
 ;; 	       (let* ((paths (set-difference (cdr justif) refs))
 ;; 		      (ref1 (nth (- (car refs) 1) orig-list))
 ;; 		      (ref2 (nth (- (second refs) 1) orig-list))
@@ -244,7 +245,7 @@ environ
 (defvar def-footer "end;\n\n" )
  
 
-(defun create-def-steps (aritylist kind)
+(defun create-def-steps (aritylist kind sign)
 "Creates a list of definitional steps, aritylist is nonempty,
 kind is either 'pred' or 'func'"
 (let* ((al (sort aritylist (function (lambda (x y) (< (cdr x) (cdr y))))))
@@ -264,7 +265,10 @@ kind is either 'pred' or 'func'"
       
       (let (l addedloci)
 	(while (< prev (cdar al))
-	  (setq l (cons (concat "x" (int-to-string (+ 1 prev))) l)
+	  (setq l (cons (sgn-insert 
+			 (intern (concat "x" (int-to-string (+ 1 prev))))
+			 sign locikind)
+			l)
 		prev (+ 1 prev)))
 	(if (equal kind "func")
 	    (setq leftbrack "(" rightbrack ")"))
@@ -349,7 +353,7 @@ kind is either 'pred' or 'func'"
 		     "\n for set;\n\n"))
 ;; Function defs
       (if (< 0 (hash-table-count funcs))
-	  (let ((funcdefs (create-def-steps (hash-vals funcs) "func")))
+	  (let ((funcdefs (create-def-steps (hash-vals funcs) "func" sign)))
 	    (mizinsert def-header contra-assumption)
 	    (while funcdefs
 	      (mizinsert (car funcdefs))
@@ -357,7 +361,7 @@ kind is either 'pred' or 'func'"
 	    (mizinsert def-footer)))
 ;; Predicate defs
       (if (< 0 (hash-table-count preds))
-	  (let ((preddefs (create-def-steps (hash-vals preds) "pred")))
+	  (let ((preddefs (create-def-steps (hash-vals preds) "pred" sign)))
 	    (mizinsert def-header contra-assumption)
 	    (while preddefs
 	      (mizinsert (car preddefs))
@@ -412,7 +416,7 @@ if mizsymbs given, the hash of mizar syms is not created here."
   (let* ((dir (file-name-directory fname))
 	 (name (file-name-nondirectory fname))
 	 (name1 (file-name-sans-extension name))
-	 (sign  (list (makehash) (makehash) (makehash)
+	 (sign  (list (makehash) (makehash) (makehash) (makehash)
 		      (if mizsymbs mizsymbs 
 			(create-name-hash mizar-syms)))))
     (string-match "\\([A-Z0-9]+[+-][0-9]+\\).*" name1)
