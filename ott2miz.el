@@ -1,27 +1,17 @@
 ;; ott2miz - otter to Mizar translator
-;;  (
-;;  (1 (input) (or (animal v0) (not (wolf v0))) (1))
-;;  (2 (input) (or (animal v0) (not (fox v0))) (2))
-;;  (3 (input) (or (animal v0) (not (bird v0))) (3))
-;;  (4 (input) (or (animal v0) (not (snail v0))) (5))
-;;  (5 (input) (or (plant v0) (not (grain v0))) (6))
-;;  (6 (input) (or (eats v0 v1) (or (eats v0 v2) (or (not (animal v0)) (or (not (plant v1)) (or (not (animal v2)) (or (not (plant v3)) (or (not (much_smaller v2 v0)) (not (eats v2 v3))))))))) (7))
-;;  (7 (input) (or (much_smaller v0 v1) (or (not (snail v0)) (not (bird v1)))) (9))
-;;  (8 (input) (or (much_smaller v0 v1) (or (not (bird v0)) (not (fox v1)))) (10))
-;;  (9 (input) (or (much_smaller v0 v1) (or (not (fox v0)) (not (wolf v1)))) (11))
-;;  (10 (input) (or (not (wolf v0)) (or (not (grain v1)) (not (eats v0 v1)))) (13))
-;;  (11 (input) (or (not (bird v0)) (or (not (snail v1)) (not (eats v0 v1)))) (15))
-;;  (12 (input) (or (plant (snail_food_of v0)) (not (snail v0))) (18))
-;;  (13 (input) (or (eats v0 (snail_food_of v0)) (not (snail v0))) (19))
-;;  (14 (input) (or (not (animal v0)) (or (not (animal v1)) (or (not (grain v2)) (or (not (eats v0 v1)) (not (eats v1 v2)))))) (20))
-;;  (15 (instantiate 6 ((v1 . v3))) (or (eats v0 v3) (or (eats v0 v2) (or (not (animal v0)) (or (not (plant v3)) (or (not (animal v2)) (or (not (plant v3)) (or (not (much_smaller v2 v0)) (not (eats v2 v3))))))))) NIL)
+
+;; run with: emacs -batch -q -l ott2miz.el --eval '(translate-many <indexfile>)'
+;; where <indexfile> is in a directory with all problems (proof objects),
+;; and it contains listing of their filenames (without directory)
+;; results in .miz and .voc file for each problem
 
 ;; We now use global hashes for symbols -
 ;; requires Emacs v. >= 21
 
+(require 'cl)
+
 (setq max-lisp-eval-depth 2000)
 (setq max-specpdl-size 2000)
-
 
 (defvar mizar-syms '(and antonym attr as assume be begin being canceled case cases cluster coherence compatibility consider consistency constructors contradiction correctness clusters def deffunc definition definitions defpred environ equals ex existence for func given hence  requirements holds if iff implies irreflexivity it let means mode not notation of or otherwise  over per pred provided qua reconsider redefine reflexivity reserve scheme schemes signature struct such suppose synonym take that thus then theorems vocabulary where associativity commutativity connectedness irreflexivity reflexivity symmetry uniqueness transitivity idempotence asymmetry projectivity involutiveness by from proof now end hereby for ex not & or implies iff st holds being theorem scheme definition thesis empty in))
 
