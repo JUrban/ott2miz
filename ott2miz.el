@@ -196,7 +196,7 @@ Propsitional by parents.
 					    inter " by A" (int-to-string (car refs))
 					    ";\nhence thesis by A" 
 					    (int-to-string (second refs)) ";\nend"))))
-;; Now result remove the needed var - have to cheat by adding it
+;; Redundant var - remove it by now - add a fictitious var
 		       (t   
 			(let* ((addvars (set-difference vars1 vars))
 			       (letvsstr (mapconcat 'identity (union vars1 vars) ","))
@@ -212,17 +212,41 @@ Propsitional by parents.
 					    "hence " (car factandsyms) " by A" 
 					    (int-to-string (second refs)) ";\nend;\n"
 					    "hence thesis;\nend")))))))
+;; Pramodulation handling 
+;; - seems that the first clause in refs is always the demodulator
+;; the equality must not be under any (even fictitious) quantifier, to
+;; do simple justif.
+	      ((eq rule 'paramod) ;; we need to chase only one ancestor
+	       (let* ((paths (delete-if  'numberp (copy-sequence (cdr justif))))
+		      (ref1 (caddr (nth (- (car refs) 1) orig-list)))
+		      (fs1 (fla2miz ref1 sign))
+		      (fvars1 (second fs1)))
+		 (cond ((not fvars1)
+;; without vars, happy - simple justif
+			(setq res (concat mylab fact " by " 
+					  (mapconcat '(lambda (x) 
+							(concat "A" (int-to-string x)))
+						     refs ","))))
+;; ok, more vars in result than in demod
+		       ((subsetp fvars1 vars)
+			(let* ((inter (car fs1)))
+			  ;; THis is a proof - hopefully
+			  (setq res (concat mylab fact "\nproof let " varsstr ";\n"
+					    inter " by A" (int-to-string (car refs))
+					    ";\nhence thesis by A" 
+					    (int-to-string (second refs)) ";\nend"))))
 
-;;	      ((eq rule 'paramod) ;; we need to chase only one ancestor
-;; 	       (let* ((paths (set-difference (cdr justif) refs))
-;; 		      (ref1 (nth (- (car refs) 1) orig-list))
-;; 		      (ref2 (nth (- (second refs) 1) orig-list))
-;; 		      (lit1 (obj-from-path ref1 (car paths)))
-;; 		      (lit2 (obj-from-path ref2 (second paths)))
-;; 		      (res1 (fla2miz lit1 sign))
-;; 		      (res2 (fla2miz lit2 sign))
-;; 		      (vars1 (second res1))
-;; 		      (vars2 (second res2)))
+;; Redundant var - remove it by "now" - add a fictitious var
+		       (t   
+			(let* ((letvsstr (mapconcat 'identity (union fvars1 vars) ","))
+			       (inter (car fs1)))
+			  (setq res (concat mylab fact "\nproof\n now let " letvsstr 
+					    ";\n" inter " by A" 
+					    (int-to-string (car refs)) ";\n"
+					    "hence " (car factandsyms) " by A" 
+					    (int-to-string (second refs)) ";\nend;\n"
+					    "hence thesis;\nend")))))))
+
 	      (t
 	       (setq res (concat mylab fact))
 	       (if refs
