@@ -109,7 +109,7 @@ Instantiate steps are justified by their parent,
 Resolve steps are justified by parents,
 Propsitional by parents.
 "
-  (let (out allvars allpreds allfuncs)
+  (let (out allvars allpreds allfuncs assumptions)
     (while otter-list
       (let* ((in (car otter-list))
 	     (mylab (concat "A" (int-to-string (car in)) ": "))
@@ -124,25 +124,31 @@ Propsitional by parents.
 	     (varsstr (mapconcat 'identity vars ","))
 	     (fact (if vars (concat "for " varsstr " holds " (car factandsyms))
 		     (car factandsyms)))
-	     (res (concat mylab fact)))
+	     res)
+	(if (eq rule 'input)
+	    (setq assumptions (cons fact assumptions)
+		  res (concat "assume " mylab fact))
+	  (setq res (concat mylab fact)))
 	(if refs
 	    (setq res (concat res " by " 
 			      (mapconcat '(lambda (x) (concat "A" (int-to-string x)))
 					 refs ","))))
+	
 	(setq  res (concat res ";\n")
 	       otter-list (cdr otter-list)
 	       allvars (union vars allvars)
 	       allpreds (union preds allpreds :test 'equal)
 	       allfuncs (union funcs allfuncs :test 'equal)
 	       out (cons res out))))
-    (list (nreverse out) allvars allpreds allfuncs)))
+    (list (nreverse out) allvars allpreds allfuncs (nreverse assumptions))))
 
 (defvar  translation-header 
   ":: Article created automatically from Otter proof object
 :: by ott2miz
 environ
 ")
-(defvar def-header "definition\n  assume ASS: contradiction;\n")
+(defvar def-header "definition\n")
+(defvar contra-assumption "assume ASS: contradiction;\n")
 (defvar def-footer "end;\n\n" )
  
 
@@ -201,13 +207,6 @@ kind is either 'pred' or 'func'"
 		  pos (min (+ pos max-line-length) total))))))
     (setq lines (cdr lines)))))
 	      
-	  
-
-
-
-
-
-
 
 (defun ott2miz (otter-list articlename)
   "Prints the .miz and .voc file for the proof object"
@@ -216,8 +215,10 @@ kind is either 'pred' or 'func'"
 	 (vars  (second trans))
 	 (preds (third trans))
 	 (funcs (fourth trans))
+	 (assumptions (fifth trans))
 	 (mizbuf (find-file-noselect (concat articlename ".miz")))
 	 (vocbuf (find-file-noselect (concat articlename ".voc"))))
+;; Voc file
     (with-current-buffer vocbuf
       (erase-buffer)
       (let ((f funcs) (p preds))
@@ -228,7 +229,8 @@ kind is either 'pred' or 'func'"
 	  (mizinsert "R" (caar p) "\n")
 	  (setq p (cdr p)))
 	(save-buffer)))
-      (with-current-buffer mizbuf
+;; Miz file
+    (with-current-buffer mizbuf
       (erase-buffer)
       (mizinsert translation-header)
       (mizinsert "vocabulary " (upcase articlename) ";\n" "begin\n\n")
@@ -237,7 +239,7 @@ kind is either 'pred' or 'func'"
 ;; Function defs
       (if funcs
 	  (let ((funcdefs (create-def-steps funcs "func")))
-	    (mizinsert def-header)
+	    (mizinsert def-header contra-assumption)
 	    (while funcdefs
 	      (mizinsert (car funcdefs))
 	      (setq funcdefs (cdr funcdefs)))
@@ -250,8 +252,20 @@ kind is either 'pred' or 'func'"
 	      (mizinsert (car preddefs))
 	      (setq preddefs (cdr preddefs)))
 	    (mizinsert def-footer)))
+;; Theorem
+      (if (not assumptions) 
+	  (error "No assumptions!!")
+	(mizinsert "theorem\n")
+	(while assumptions
+	  (mizinsert "(" (car assumptions) ")"
+		     (if (cdr assumptions) " &\n" 
+		       "\nimplies contradiction\nproof\n"))
+	  (setq assumptions (cdr assumptions))))
+;; Inference steps, the last one must be thesis (contradiction)
       (while steps 
-	(mizinsert (car steps))
+	(mizinsert (if (cdr steps) "" "thus ") (car steps))
 	(setq steps (cdr steps)))
+;; End of proof
+      (mizinsert "end;\n")
       (save-buffer))    
     ))
