@@ -1,5 +1,5 @@
 ;; ott2miz - otter to Mizar translator
-
+;; $Revision: 1.17 $
 ;; run with: emacs -batch -q -l ott2miz.el --eval '(translate-many "<indexfile>")'
 ;; where <indexfile> is in a directory with all problems (proof objects),
 ;; and it contains listing of their filenames (without directory)
