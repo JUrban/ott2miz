@@ -15,6 +15,9 @@
 ;;  (14 (input) (or (not (animal v0)) (or (not (animal v1)) (or (not (grain v2)) (or (not (eats v0 v1)) (not (eats v1 v2)))))) (20))
 ;;  (15 (instantiate 6 ((v1 . v3))) (or (eats v0 v3) (or (eats v0 v2) (or (not (animal v0)) (or (not (plant v3)) (or (not (animal v2)) (or (not (plant v3)) (or (not (much_smaller v2 v0)) (not (eats v2 v3))))))))) NIL)
 
+(defun int-or-symbol-name (obj)
+(if (symbolp obj) (symbol-name obj)
+  (int-to-string obj)))
 
 (defun term2miz (term)
 ;; like fla2miz on atomic flas, but dieffrent collecting
@@ -23,7 +26,7 @@
 (let ((res "") vars preds funcs)
   (cond ((listp term)
 	 (let (prev (ress (mapcar 'term2miz (cdr term))))
-	   (setq res (symbol-name (car term)))
+	   (setq res (int-or-symbol-name (car term)))
 	   (if (string-match "^v[0-9]+$" res)
 	       (error (concat "Var here!: " res))
 	     (setq funcs (list (cons res (length (cdr term))))))
@@ -71,6 +74,14 @@
 			  vars (cadr res1)
 			  preds (third res1)
 			  funcs (fourth res1)
+			  )))
+		 ((eq 'equal (car fla)) 
+		  (let ((res1 (term2miz (cadr fla)))
+			(res2 (term2miz (caddr fla))))
+		    (setq res (concat (car res1) " = " (car res2))
+			  vars (union (cadr res1) (cadr res2))
+			  preds (union (third res1) (third res2) :test 'equal)
+			  funcs (union (fourth res1) (fourth res2) :test 'equal)
 			  )))
 	       ;;; predicate or list
 		 (t
