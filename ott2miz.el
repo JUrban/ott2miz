@@ -198,10 +198,10 @@ Propsitional by parents.
 					    (int-to-string (second refs)) ";\nend"))))
 ;; Redundant var - remove it by now - add a fictitious var
 		       (t   
-			(let* ((addvars (set-difference vars1 vars))
-			       (letvsstr (mapconcat 'identity (union vars1 vars) ","))
+			(let* ((letvars (union vars1 vars))
+			       (letvsstr (mapconcat 'identity letvars ","))
 			       (fs1 (fla2miz ref1 sign))
-			       (restvars (set-difference (second fs1) addvars))
+			       (restvars (set-difference (second fs1) letvars))
 			       (restvstr (mapconcat 'identity restvars ","))
 			       (inter (if restvars 
 					  (concat "for " restvstr " holds " (car fs1))
