@@ -1,3 +1,4 @@
+;; ott2miz - otter to Mizar translator
 ;;  (
 ;;  (1 (input) (or (animal v0) (not (wolf v0))) (1))
 ;;  (2 (input) (or (animal v0) (not (fox v0))) (2))
@@ -15,42 +16,68 @@
 ;;  (14 (input) (or (not (animal v0)) (or (not (animal v1)) (or (not (grain v2)) (or (not (eats v0 v1)) (not (eats v1 v2)))))) (20))
 ;;  (15 (instantiate 6 ((v1 . v3))) (or (eats v0 v3) (or (eats v0 v2) (or (not (animal v0)) (or (not (plant v3)) (or (not (animal v2)) (or (not (plant v3)) (or (not (much_smaller v2 v0)) (not (eats v2 v3))))))))) NIL)
 
+;; We now use global hashes for symbols -
+;; requires Emacs v. >= 21
+
+(setq max-lisp-eval-depth 2000)
+(setq max-specpdl-size 2000)
+
 (defun int-or-symbol-name (obj)
 (if (symbolp obj) (symbol-name obj)
   (int-to-string obj)))
 
-(defun term2miz (term)
+(defun hash-vals (hsh)
+(let (l) 
+  (maphash (function (lambda (key val) (setq l (cons val l)))) hsh)
+  l))
+
+(defconst varkind 0)
+(defconst predkind 1)
+(defconst funckind 2)
+
+(defun sgn-insert (obj sign kind &optional arity)
+"Insert symbol or int into a signature, fix possible clashes.
+Kind is 0 ('var), 1('pred), 2 ('func) .
+Returns the string created."
+(let ((res (gethash obj (elt sign kind))))
+  (if res (if (eq kind varkind) res (car res))
+    (let ((varres (gethash obj (elt sign varkind)))
+	  (predres (gethash obj (elt sign predkind)))
+	  (funcres (gethash obj (elt sign funckind)))
+	  (name (int-or-symbol-name obj)))
+      (if (or varres predres funcres)
+	  (setq name (concat name "__" (int-to-string kind))))
+      (puthash obj (if arity (cons name arity) name) 
+	       (elt sign kind))
+      name))))
+
+(defun term2miz (term sign)
 ;; like fla2miz on atomic flas, but dieffrent collecting
 ;; leaving it to return empty preds list too,
 ;; since we may need it later for Fraenkels
 (let ((res "") vars preds funcs)
   (cond ((listp term)
-	 (let (prev (ress (mapcar 'term2miz (cdr term))))
-	   (setq res (int-or-symbol-name (car term)))
-	   (if (string-match "^v[0-9]+$" res)
-	       (error (concat "Var here!: " res))
-	     (setq funcs (list (cons res (length (cdr term))))))
+	 (let ((ress (mapcar '(lambda (x) (term2miz x sign)) (cdr term)))
+	       prev)
+	   (setq res (sgn-insert (car term) sign funckind 
+				 (length (cdr term))))
 	   (if ress (setq res (concat res "(") prev t))
 	   (while ress
 	     (setq res (concat res (caar ress))
-	     vars (union vars (second (car ress)))
-	     preds (union preds (third (car ress)) :test 'equal)
-	     funcs (union funcs (fourth (car ress)) :test 'equal)
-	     ress (cdr ress))
+		   vars (union vars (second (car ress)))
+		   ress (cdr ress))
 	     (if ress (setq res (concat res ","))))
 	   (if prev (setq res (concat res ")")))
 	   ))
 	((symbolp term)
-	 (setq res (symbol-name term))
-	 (if (string-match "^v[0-9]+$" res)
-	     (setq vars (list res))
-	   (error (concat "Variable expected here!: " res))))
+	 (setq res (sgn-insert term sign varkind)
+	       vars (list res)))
 	(t (error (concat "Bad term here!: " (prin1-to-string term)))))
-  (list res vars preds funcs)))
+  (list res vars)))
 
 
        
-(defun fla2miz (fla)
+(defun fla2miz (fla sign)
   ;;"Input is either one symbol (false) or list.
   ;;(or a b) --> (a or b),(f a b) --> f(a,b),(not a)-->(not a),(P a b) --> P(a,b),"
   ;; collect vars,preds and funcs here
@@ -61,58 +88,47 @@
   (let ((res "") vars preds funcs)
     (cond ((listp fla)
 	   (cond ((eq 'or (car fla)) 
-		  (let ((res1 (fla2miz (cadr fla)))
-			(res2 (fla2miz (caddr fla))))
+		  (let ((res1 (fla2miz (cadr fla) sign))
+			(res2 (fla2miz (caddr fla) sign)))
 		    (setq res (concat (car res1) " or " (car res2))
 			  vars (union (cadr res1) (cadr res2))
-			  preds (union (third res1) (third res2) :test 'equal)
-			  funcs (union (fourth res1) (fourth res2) :test 'equal)
 			  )))
 		 ((eq 'not (car fla))
-		  (let ((res1 (fla2miz (cadr fla))))
+		  (let ((res1 (fla2miz (cadr fla) sign)))
 		    (setq res (concat  " not " (car res1))
 			  vars (cadr res1)
-			  preds (third res1)
-			  funcs (fourth res1)
 			  )))
 		 ((eq 'equal (car fla)) 
-		  (let ((res1 (term2miz (cadr fla)))
-			(res2 (term2miz (caddr fla))))
+		  (let ((res1 (term2miz (cadr fla) sign))
+			(res2 (term2miz (caddr fla) sign)))
 		    (setq res (concat (car res1) " = " (car res2))
 			  vars (union (cadr res1) (cadr res2))
-			  preds (union (third res1) (third res2) :test 'equal)
-			  funcs (union (fourth res1) (fourth res2) :test 'equal)
 			  )))
 	       ;;; predicate or list
 		 (t
-		  (let (prev (ress (mapcar 'term2miz (cdr fla))))
-		    (setq res (symbol-name (car fla)))
-		    (if (string-match "^v[0-9]+$" res)
-			(error (concat "Var here!: " res))
-		      (setq preds (list (cons res (length (cdr fla))))))
-		    ;; not for mizar predicates
-		    ;;		    (if ress (setq res (concat res "(") prev t))
+		  (let ((ress (mapcar '(lambda (x) (term2miz x sign)) (cdr fla)))
+			prev)
+		    (setq res (sgn-insert (car fla) sign predkind 
+					  (length (cdr fla))))
+		    ;; no "(" for mizar predicates
 		    (if ress (setq res (concat res " ")))
 		    (while ress
 		      (setq res (concat res (caar ress))
 			    vars (union vars (second (car ress)))
-			    preds (union preds (third (car ress)) :test 'equal)
-			    funcs (union funcs (fourth (car ress)) :test 'equal)
 			    ress (cdr ress))
 		      (if ress (setq res (concat res ","))))
-		    ;; not for mizar predicates
-		    ;;		    (if prev (setq res (concat res ")")))
+		    ;; no ")" for mizar predicates
 		    ))))
 	  ((symbolp fla)
 	   (if (eq fla 'false)
 	       (setq res "contradiction")
 	     (error (concat "Bad fla here!: " (symbol-name fla)))))
 	  (t (error (concat "Bad fla here!: " (prin1-to-string fla)))))
-    (list res vars preds funcs)))
+    (list res vars)))
 
 
 
-(defun translate (otter-list)
+(defun translate (otter-list sign)
   "Translate a piece of Otter proof object into Mizar,
 return list of Mizar steps. and lists of vars,preds and funcs used.
 Input clauses have no justification,
@@ -120,7 +136,7 @@ Instantiate steps are justified by their parent,
 Resolve steps are justified by parents,
 Propsitional by parents.
 "
-  (let (out allvars allpreds allfuncs assumptions)
+  (let (out assumptions)
     (while otter-list
       (let* ((in (car otter-list))
 	     (mylab (concat "A" (int-to-string (car in)) ": "))
@@ -128,10 +144,8 @@ Propsitional by parents.
 	     (rule (car justif))
 	     (refs (delete-if 'listp (copy-sequence 
 				      (cdr justif)))) ; don't need literals
-	     (factandsyms (fla2miz (caddr in)))
+	     (factandsyms (fla2miz (caddr in) sign))
 	     (vars (second factandsyms))
-	     (preds (third factandsyms))
-	     (funcs (fourth factandsyms))
 	     (varsstr (mapconcat 'identity vars ","))
 	     (fact (if vars (concat "for " varsstr " holds " (car factandsyms))
 		     (car factandsyms)))
@@ -147,11 +161,8 @@ Propsitional by parents.
 	
 	(setq  res (concat res ";\n")
 	       otter-list (cdr otter-list)
-	       allvars (union vars allvars)
-	       allpreds (union preds allpreds :test 'equal)
-	       allfuncs (union funcs allfuncs :test 'equal)
 	       out (cons res out))))
-    (list (nreverse out) allvars allpreds allfuncs (nreverse assumptions))))
+    (list (nreverse out) (nreverse assumptions))))
 
 (defvar  translation-header 
   ":: Article created automatically from Otter proof object
@@ -216,7 +227,7 @@ kind is either 'pred' or 'func'"
 	      (progn
 		(insert (substring bad start) "\n")
 		(setq start total))
-	    (while (and (not (eq (aref bad pos) splitchar)) (<= start  pos))
+	    (while (and (<= start  pos) (not (eq (aref bad pos) splitchar))) 
 	      (decf pos))
 	    (if (<= pos start) 
 		(cond ((eq splitchar 32)
@@ -224,6 +235,9 @@ kind is either 'pred' or 'func'"
 			     pos (min (+ start max-line-length) total)))
 		      ((eq splitchar 44)
 		       (setq splitchar 40
+			  pos (min (+ start max-line-length) total)))
+		      ((eq splitchar 40)
+		       (setq splitchar 41
 			  pos (min (+ start max-line-length) total)))
 		      (t
 		       (error (concat "Unsplittable line: " bad))))
@@ -234,45 +248,45 @@ kind is either 'pred' or 'func'"
     (setq lines (cdr lines)))))
 	      
 
-(defun ott2miz (otter-list articlename)
+(defun ott2miz (otter-list sign articlename)
   "Prints the .miz and .voc file for the proof object"
-  (let* ((trans (translate otter-list))
+  (let* ((trans (translate otter-list sign))
 	 (steps (car trans))
-	 (vars  (second trans))
-	 (preds (third trans))
-	 (funcs (fourth trans))
-	 (assumptions (fifth trans))
+	 (vars  (car sign))
+	 (preds (second sign))
+	 (funcs (third sign))
+	 (assumptions (second trans))
 	 (mizbuf (find-file-noselect (concat articlename ".miz")))
 	 (vocbuf (find-file-noselect (concat articlename ".voc"))))
 ;; Voc file
     (with-current-buffer vocbuf
       (erase-buffer)
-      (let ((f funcs) (p preds))
-	(while f
-	  (mizinsert "O" (caar f) "\n")
-	  (setq f (cdr f)))
-	(while p
-	  (mizinsert "R" (caar p) "\n")
-	  (setq p (cdr p)))
-	(save-buffer)))
+      (maphash 
+       (function (lambda (key val) (mizinsert "O" (car val) "\n")))
+       funcs)
+      (maphash 
+       (function (lambda (key val) (mizinsert "R" (car val) "\n")))
+       preds)
+      (save-buffer))
 ;; Miz file
     (with-current-buffer mizbuf
       (erase-buffer)
       (mizinsert translation-header)
       (mizinsert "vocabulary " (upcase articlename) ";\n" "begin\n\n")
-      (if vars 
-	  (mizinsert "reserve " (mapconcat 'identity vars ",") "\n for set;\n\n"))
+      (if (< 0 (hash-table-count vars))
+	  (mizinsert "reserve " (mapconcat 'identity (hash-vals vars) ",")
+		     "\n for set;\n\n"))
 ;; Function defs
-      (if funcs
-	  (let ((funcdefs (create-def-steps funcs "func")))
+      (if (< 0 (hash-table-count funcs))
+	  (let ((funcdefs (create-def-steps (hash-vals funcs) "func")))
 	    (mizinsert def-header contra-assumption)
 	    (while funcdefs
 	      (mizinsert (car funcdefs))
 	      (setq funcdefs (cdr funcdefs)))
 	    (mizinsert def-footer)))
 ;; Predicate defs
-      (if preds 
-	  (let ((preddefs (create-def-steps preds "pred")))
+      (if (< 0 (hash-table-count preds))
+	  (let ((preddefs (create-def-steps (hash-vals preds) "pred")))
 	    (mizinsert def-header)
 	    (while preddefs
 	      (mizinsert (car preddefs))
@@ -293,7 +307,9 @@ kind is either 'pred' or 'func'"
 	(setq steps (cdr steps)))
 ;; End of proof
       (mizinsert "end;\n")
-      (save-buffer))    
+      (save-buffer))
+    (kill-buffer mizbuf)
+    (kill-buffer vocbuf)
     ))
 
 
@@ -301,13 +317,16 @@ kind is either 'pred' or 'func'"
   "Takes care of TPTP and Mizar filenames too"
   (let* ((dir (file-name-directory fname))
 	 (name (file-name-nondirectory fname))
-	 (name1 (file-name-sans-extension name)))
-    (string-match "\\([a-z0-9]+\\).*" name1)
+	 (name1 (file-name-sans-extension name))
+	 (sign  (list (makehash) (makehash) (makehash))))
+    (string-match "\\([A-Z0-9]+[+-][0-9]+\\).*" name1)
     (let ((mizname (downcase (match-string 1 name1))))
+;; take care of [+-] by replacing with [pm]
+      (aset mizname 6 (if (eq (aref mizname 6) 45) 109 112))
       (with-temp-buffer
 	(insert-file-contents-literally fname)
 	(goto-char (point-min))
-	(ott2miz (read (current-buffer)) mizname)))))
+	(ott2miz (read (current-buffer)) sign mizname)))))
 
 (defun translate-many (indexname)
 "Translate files from index"
