@@ -1,6 +1,6 @@
 ;; ott2miz - otter to Mizar translator
 
-;; run with: emacs -batch -q -l ott2miz.el --eval '(translate-many <indexfile>)'
+;; run with: emacs -batch -q -l ott2miz.el --eval '(translate-many "<indexfile>")'
 ;; where <indexfile> is in a directory with all problems (proof objects),
 ;; and it contains listing of their filenames (without directory)
 ;; results in .miz and .voc file for each problem
@@ -433,10 +433,15 @@ if mizsymbs given, the hash of mizar syms is not created here."
 	 (sign  (list (makehash) (makehash) (makehash) (makehash)
 		      (if mizsymbs mizsymbs 
 			(create-name-hash mizar-syms)))))
-    (string-match "\\([A-Z0-9]+[+-][0-9]+\\).*" name1)
+    (unless (string-match "^\\([A-Z0-9_+-]+\\).*" name1)
+      (error "File names must match ^[A-Z0-9_+-]+.* for creating Mizar-friendly names: %s" name1))
+;;    (string-match "\\([A-Z0-9]+[+-][0-9]+\\).*" name1)
     (let ((mizname (downcase (match-string 1 name1))))
 ;; take care of [+-] by replacing with [pm]
-      (aset mizname 6 (if (eq (aref mizname 6) 45) 109 112))
+      (setq mizname 
+	    (replace-regexp-in-string 
+	     "[+]" "p" (replace-regexp-in-string "[-]" "m" mizname)))
+;;      (aset mizname 6 (if (eq (aref mizname 6) 45) 109 112))
       (if (< 8 (length mizname)) 
 	  (setq mizname (substring mizname 0 8)))
       (if usednames
