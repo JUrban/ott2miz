@@ -3,7 +3,23 @@
 ;; run with: emacs -batch -q -l ott2miz.el --eval '(translate-many "<indexfile>")'
 ;; where <indexfile> is in a directory with all problems (proof objects),
 ;; and it contains listing of their filenames (without directory)
-;; results in .miz and .voc file for each problem
+;; results in .miz and .voc file for each problem.
+;; Special mappings to Mizar symbols can be given for each file
+;; in a rule file with extension .rul .
+;; The rules must have the form:
+;;
+;; ("OTTER-SYMBOL" MIZAR-PATTERN)
+;;
+;; where MIZAR-PATTERN looks e.g. like (1 "=" 2),
+;; i.e. the arguments are given by numbers, and the rest are supposed
+;; to be Mizar symbols and interpunction.
+;; Actually, this can
+;; be used to expand to complex terms too, e.g. to
+;; ("+(" 1 "," "-(" 2 "))" )
+
+;; Note that symbols captured by these rules will not
+;; be defined in the vocabulary and introduced via contradiction,
+;; you will have to write the environmental directives manually for them.
 
 ;; We now use global hashes for symbols -
 ;; requires Emacs v. >= 21
@@ -60,31 +76,59 @@ Returns the string created."
 	       (elt sign kind))
       name))))
 
-(defun term2miz (term sign)
+(defun parse-rules (fname)
+(when (file-readable-p fname)
+  (let ((res (makehash)) tab)
+    (with-temp-buffer
+      (insert-file-contents-literally fname)
+      (goto-char (point-min))
+      (insert "(")
+      (goto-char (point-max))
+      (insert ")")
+      (goto-char (point-min))
+      (setq tab (read (current-buffer))))
+    (dolist (r1 tab) (puthash (intern (car r1)) (second r1) res))
+    res)))
+
+(defun create-name-hash (syms)
+(let ((res (make-hash-table :size (length syms))))
+  (while syms 
+    (puthash (car syms) (symbol-name (car syms)) res)
+    (setq syms (cdr syms)))
+  res))
+  
+(defun rule-use (rules sym args kind)
+"Use a rule from RULES creating string from SYM and ARGS.
+The rule must exist at this point."
+(let ((rule (gethash sym rules)))
+  (mapconcat '(lambda (x) (if (stringp x) x (car (nth (- x 1) args))))
+	     rule "")))
+
+(defun rule-exists (rules sym kind &optional arity)
+(if rules (gethash sym rules)))
+
+(defun term2miz (term sign rules)
 ;; like fla2miz on atomic flas, but dieffrent collecting
+"Return list (TERMSTR VARS), where TERMSTR is the Mizar 
+representation of the term, and VARS are variables inside it."
 (let ((res "") vars preds funcs)
-  (cond ((listp term)
-	 (let ((ress (mapcar '(lambda (x) (term2miz x sign)) (cdr term)))
-	       prev)
-	   (setq res (sgn-insert (car term) sign funckind 
-				 (length (cdr term))))
-	   (if ress (setq res (concat res "(") prev t))
-	   (while ress
-	     (setq res (concat res (caar ress))
-		   vars (union vars (second (car ress)))
-		   ress (cdr ress))
-	     (if ress (setq res (concat res ","))))
-	   (if prev (setq res (concat res ")")))
-	   ))
-	((symbolp term)
-	 (setq res (sgn-insert term sign varkind)
-	       vars (list res)))
-	(t (error (concat "Bad term here!: " (prin1-to-string term)))))
+  (cond 
+   ((listp term)
+    (let ((ress (mapcar '(lambda (x) (term2miz x sign rules)) (cdr term))))
+      (dolist (r1 ress) (setq vars (union vars (second r1))))
+      (if (rule-exists rules (car term) funckind (length (cdr term)))
+	  (setq res (rule-use rules (car term) ress funckind))
+	(setq res (sgn-insert (car term) sign funckind 
+			      (length (cdr term))))
+	(if ress 
+	    (setq res (concat res "(" (mapconcat 'car ress ",") ")" ))))))
+   ((symbolp term)
+    (setq res (sgn-insert term sign varkind)
+	  vars (list res)))
+   (t (error (concat "Bad term here!: " (prin1-to-string term)))))
   (list res vars)))
-
-
        
-(defun fla2miz (fla sign)
+(defun fla2miz (fla sign rules)
   ;;"Input is either one symbol (false) or list.
   ;;(or a b) --> (a or b),(f a b) --> f(a,b),(not a)-->(not a),(P a b) --> P(a,b),"
   ;; collect vars,preds and funcs here
@@ -93,49 +137,47 @@ Returns the string created."
   ;; Generally, the names can be oveloaded (v7 can be a predicate) -
   ;; we have to rename for Mizar - later.
   (let ((res "") vars preds funcs)
-    (cond ((listp fla)
-	   (cond ((eq 'or (car fla)) 
-		  (let ((res1 (fla2miz (cadr fla) sign))
-			(res2 (fla2miz (caddr fla) sign)))
-		    (setq res (concat (car res1) " or " (car res2))
-			  vars (union (cadr res1) (cadr res2))
-			  )))
-		 ((eq 'not (car fla))
-		  (let ((res1 (fla2miz (cadr fla) sign)))
-		    (setq res (concat  " not " (car res1))
-			  vars (cadr res1)
-			  )))
-		 ((eq 'equal (car fla)) 
-		  (let ((res1 (term2miz (cadr fla) sign))
-			(res2 (term2miz (caddr fla) sign)))
-		    (setq res (concat (car res1) " = " (car res2))
-			  vars (union (cadr res1) (cadr res2))
-			  )))
+    (cond 
+     ((listp fla)
+      (cond 
+       ((eq 'or (car fla)) 
+	(let ((res1 (fla2miz (cadr fla) sign rules))
+	      (res2 (fla2miz (caddr fla) sign rules)))
+	  (setq res (concat (car res1) " or " (car res2))
+		vars (union (cadr res1) (cadr res2))
+		)))
+       ((eq 'not (car fla))
+	(let ((res1 (fla2miz (cadr fla) sign rules)))
+	  (setq res (concat  " not " (car res1))
+		vars (cadr res1)
+		)))
+       ((eq 'equal (car fla)) 
+	(let ((res1 (term2miz (cadr fla) sign rules))
+	      (res2 (term2miz (caddr fla) sign rules)))
+	  (setq res (concat (car res1) " = " (car res2))
+		vars (union (cadr res1) (cadr res2))
+		)))
 	       ;;; predicate or list
-		 (t
-		  (let ((ress (mapcar '(lambda (x) (term2miz x sign)) (cdr fla)))
-			prev)
-		    (setq res (sgn-insert (car fla) sign predkind 
+       (t
+	(let ((ress (mapcar '(lambda (x) (term2miz x sign rules)) (cdr fla))))
+	  (dolist (r1 ress) (setq vars (union vars (second r1))))
+	  (if (rule-exists rules (car fla) predkind (length (cdr fla)))
+	      (setq res (rule-use rules (car fla) ress predkind))
+	    (setq res (sgn-insert (car fla) sign predkind 
 					  (length (cdr fla))))
-		    ;; no "(" for mizar predicates
-		    (if ress (setq res (concat res " ")))
-		    (while ress
-		      (setq res (concat res (caar ress))
-			    vars (union vars (second (car ress)))
-			    ress (cdr ress))
-		      (if ress (setq res (concat res ","))))
-		    ;; no ")" for mizar predicates
-		    ))))
-	  ((symbolp fla)
-	   (if (eq fla 'false)
-	       (setq res "contradiction")
-	     (error (concat "Bad fla here!: " (symbol-name fla)))))
-	  (t (error (concat "Bad fla here!: " (prin1-to-string fla)))))
+	    ;; no "(" ")" for mizar predicates
+	    (if ress (setq res (concat res " " 
+				       (mapconcat 'car ress ",")))))))))
+     ((symbolp fla)
+      (if (eq fla 'false)
+	  (setq res "contradiction")
+	(error (concat "Bad fla here!: " (symbol-name fla)))))
+     (t (error (concat "Bad fla here!: " (prin1-to-string fla)))))
     (list res vars)))
 
 
 
-(defun translate (orig-list sign)
+(defun translate (orig-list sign rules)
   "Translate a piece of Otter proof object into Mizar,
 return list of Mizar steps. and lists of vars,preds and funcs used.
 Input clauses have no justification,
@@ -151,99 +193,102 @@ Propsitional by parents.
 	     (rule (car justif))
 	     (refs (delete-if 'listp (copy-sequence 
 				      (cdr justif)))) ; don't need literals
-	     (factandsyms (fla2miz (caddr in) sign))
+	     (factandsyms (fla2miz (caddr in) sign rules))
 	     (vars (second factandsyms))
 	     (varsstr (mapconcat 'identity vars ","))
 	     (fact (if vars (concat "for " varsstr " holds " (car factandsyms))
 		     (car factandsyms)))
 	     res)
-	(cond ((eq rule 'input)
-	       (setq assumptions (cons fact assumptions)
-		     res (concat "assume " mylab fact)))
-;; Resolution handling
-	      ((eq rule 'resolve) ;; we need to chase only one ancestor
-	       (let* ((paths (delete-if  'numberp (copy-sequence (cdr justif))))
-		      (ref1 (caddr (nth (- (car refs) 1) orig-list)))
-		      (lit1 (obj-from-path ref1 (car paths)))
-		      (res1 (fla2miz lit1 sign))
-		      (vars1 (second res1)))
-		 (cond ((not vars1)   
-;; without vars, happy - simple justif
-			(setq res (concat mylab fact " by " 
-					  (mapconcat '(lambda (x) 
-							(concat "A" (int-to-string x)))
-						     refs ","))))
-;; ok, the needed vars are in result
-		       ((subsetp vars1 vars)   
-			(let* ((fs1 (fla2miz ref1 sign))
-			       (restvars (set-difference (second fs1) vars))
-			       (restvstr (mapconcat 'identity restvars ","))
-			       (inter (if restvars 
-					  (concat "for " restvstr " holds " (car fs1))
-					(car fs1))))
-			  ;; THis is a proof - hopefully
-			  (setq res (concat mylab fact "\nproof let " varsstr ";\n"
-					    inter " by A" (int-to-string (car refs))
-					    ";\nhence thesis by A" 
-					    (int-to-string (second refs)) ";\nend"))))
-;; Redundant var - remove it by now - add a fictitious var
-		       (t   
-			(let* ((letvars (union vars1 vars))
-			       (letvsstr (mapconcat 'identity letvars ","))
-			       (fs1 (fla2miz ref1 sign))
-			       (restvars (set-difference (second fs1) letvars))
-			       (restvstr (mapconcat 'identity restvars ","))
-			       (inter (if restvars 
-					  (concat "for " restvstr " holds " (car fs1))
-					(car fs1))))
-			  (setq res (concat mylab fact "\nproof\n now let " letvsstr 
-					    ";\n" inter " by A" 
-					    (int-to-string (car refs)) ";\n"
-					    "hence " (car factandsyms) " by A" 
-					    (int-to-string (second refs)) ";\nend;\n"
-					    "hence thesis;\nend")))))))
-;; Pramodulation handling 
-;; - seems that the first clause in refs is always the demodulator
-;; the equality must not be under any (even fictitious) quantifier, to
-;; do simple justif.
-	      ((eq rule 'paramod) ;; we need to chase only one ancestor
-	       (let* ((paths (delete-if  'numberp (copy-sequence (cdr justif))))
-		      (ref1 (caddr (nth (- (car refs) 1) orig-list)))
-		      (fs1 (fla2miz ref1 sign))
-		      (fvars1 (second fs1)))
-		 (cond ((not fvars1)
-;; without vars, happy - simple justif
-			(setq res (concat mylab fact " by " 
-					  (mapconcat '(lambda (x) 
-							(concat "A" (int-to-string x)))
-						     refs ","))))
-;; ok, more vars in result than in demod
-		       ((subsetp fvars1 vars)
-			(let* ((inter (car fs1)))
-			  ;; THis is a proof - hopefully
-			  (setq res (concat mylab fact "\nproof let " varsstr ";\n"
-					    inter " by A" (int-to-string (car refs))
-					    ";\nhence thesis by A" 
-					    (int-to-string (second refs)) ";\nend"))))
+	(cond 
+	 ((eq rule 'input)
+	  (setq assumptions (cons fact assumptions)
+		res (concat "assume " mylab fact)))
+	 ;; Resolution handling
+	 ((eq rule 'resolve) ;; we need to chase only one ancestor
+	  (let* ((paths (delete-if  'numberp (copy-sequence (cdr justif))))
+		 (ref1 (caddr (nth (- (car refs) 1) orig-list)))
+		 (lit1 (obj-from-path ref1 (car paths)))
+		 (res1 (fla2miz lit1 sign rules))
+		 (vars1 (second res1)))
+	    (cond 
+	     ((not vars1)   
+	      ;; without vars, happy - simple justif
+	      (setq res (concat mylab fact " by " 
+				(mapconcat '(lambda (x) 
+					      (concat "A" (int-to-string x)))
+					   refs ","))))
+	     ;; ok, the needed vars are in result
+	     ((subsetp vars1 vars)   
+	      (let* ((fs1 (fla2miz ref1 sign rules))
+		     (restvars (set-difference (second fs1) vars))
+		     (restvstr (mapconcat 'identity restvars ","))
+		     (inter (if restvars 
+				(concat "for " restvstr " holds " (car fs1))
+			      (car fs1))))
+		;; THis is a proof - hopefully
+		(setq res (concat mylab fact "\nproof let " varsstr ";\n"
+				  inter " by A" (int-to-string (car refs))
+				  ";\nhence thesis by A" 
+				  (int-to-string (second refs)) ";\nend"))))
+	     ;; Redundant var - remove it by now - add a fictitious var
+	     (t   
+	      (let* ((letvars (union vars1 vars))
+		     (letvsstr (mapconcat 'identity letvars ","))
+		     (fs1 (fla2miz ref1 sign rules))
+		     (restvars (set-difference (second fs1) letvars))
+		     (restvstr (mapconcat 'identity restvars ","))
+		     (inter (if restvars 
+				(concat "for " restvstr " holds " (car fs1))
+			      (car fs1))))
+		(setq res (concat mylab fact "\nproof\n now let " letvsstr 
+				  ";\n" inter " by A" 
+				  (int-to-string (car refs)) ";\n"
+				  "hence " (car factandsyms) " by A" 
+				  (int-to-string (second refs)) ";\nend;\n"
+				  "hence thesis;\nend")))))))
+	 ;; Pramodulation handling 
+	 ;; - seems that the first clause in refs is always the demodulator
+	 ;; the equality must not be under any (even fictitious) quantifier,
+	 ;; to do simple justif.
+	 ((eq rule 'paramod) ;; we need to chase only one ancestor
+	  (let* ((paths (delete-if  'numberp (copy-sequence (cdr justif))))
+		 (ref1 (caddr (nth (- (car refs) 1) orig-list)))
+		 (fs1 (fla2miz ref1 sign rules))
+		 (fvars1 (second fs1)))
+	    (cond 
+	     ((not fvars1)
+	      ;; without vars, happy - simple justif
+	      (setq res (concat mylab fact " by " 
+				(mapconcat '(lambda (x) 
+					      (concat "A" (int-to-string x)))
+					   refs ","))))
+	     ;; ok, more vars in result than in demod
+	     ((subsetp fvars1 vars)
+	      (let* ((inter (car fs1)))
+		;; THis is a proof - hopefully
+		(setq res (concat mylab fact "\nproof let " varsstr ";\n"
+				  inter " by A" (int-to-string (car refs))
+				  ";\nhence thesis by A" 
+				  (int-to-string (second refs)) ";\nend"))))
 
-;; Redundant var - remove it by "now" - add a fictitious var
-		       (t   
-			(let* ((letvsstr (mapconcat 'identity (union fvars1 vars) ","))
-			       (inter (car fs1)))
-			  (setq res (concat mylab fact "\nproof\n now let " letvsstr 
-					    ";\n" inter " by A" 
-					    (int-to-string (car refs)) ";\n"
-					    "hence " (car factandsyms) " by A" 
-					    (int-to-string (second refs)) ";\nend;\n"
-					    "hence thesis;\nend")))))))
+	     ;; Redundant var - remove it by "now" - add a fictitious var
+	     (t   
+	      (let* ((letvsstr (mapconcat 'identity (union fvars1 vars) ","))
+		     (inter (car fs1)))
+		(setq res (concat mylab fact "\nproof\n now let " letvsstr 
+				  ";\n" inter " by A" 
+				  (int-to-string (car refs)) ";\n"
+				  "hence " (car factandsyms) " by A" 
+				  (int-to-string (second refs)) ";\nend;\n"
+				  "hence thesis;\nend")))))))
 
-	      (t
-	       (setq res (concat mylab fact))
-	       (if refs
-		   (setq res (concat res " by " 
-				     (mapconcat '(lambda (x) 
-						   (concat "A" (int-to-string x)))
-						refs ","))))))
+	 (t
+	  (setq res (concat mylab fact))
+	  (if refs
+	  (setq res (concat res " by " 
+			    (mapconcat '(lambda (x) 
+					  (concat "A" (int-to-string x)))
+				       refs ","))))))
 	(setq  res (concat res ";\n")
 	       otter-list (cdr otter-list)
 	       out (cons res out))))
@@ -336,9 +381,9 @@ kind is either 'pred' or 'func'"
     (setq lines (cdr lines)))))
 	      
 
-(defun ott2miz (otter-list sign articlename)
+(defun ott2miz (otter-list sign rules articlename)
   "Prints the .miz and .voc file for the proof object"
-  (let* ((trans (translate otter-list sign))
+  (let* ((trans (translate otter-list sign rules))
 	 (steps (car trans))
 	 (vars  (car sign))
 	 (preds (second sign))
@@ -423,6 +468,10 @@ kind is either 'pred' or 'func'"
   (if (= i (length allowed-chars)) mizname
     new)))
 
+(defvar rule-file-extension ".rul"
+"Mandatory extension for syntax rule files."
+)
+
 (defun translate-file (fname &optional usednames mizsymbs)
   "Takes care of TPTP and Mizar filenames too,
 if usednames given, tries to provide a new name if conflict,
@@ -430,6 +479,9 @@ if mizsymbs given, the hash of mizar syms is not created here."
   (let* ((dir (file-name-directory fname))
 	 (name (file-name-nondirectory fname))
 	 (name1 (file-name-sans-extension name))
+	 (rname (concat (file-name-sans-extension fname)
+			rule-file-extension))
+	 (rules (parse-rules rname))
 	 (sign  (list (makehash) (makehash) (makehash) (makehash)
 		      (if mizsymbs mizsymbs 
 			(create-name-hash mizar-syms)))))
@@ -452,7 +504,7 @@ if mizsymbs given, the hash of mizar syms is not created here."
       (with-temp-buffer
 	(insert-file-contents-literally fname)
 	(goto-char (point-min))
-	(ott2miz (read (current-buffer)) sign mizname)))))
+	(ott2miz (read (current-buffer)) sign rules mizname)))))
 
 (defun translate-many (indexname)
 "Translate files from index"
