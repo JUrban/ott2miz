@@ -71,8 +71,6 @@ Returns the string created."
 
 (defun term2miz (term sign)
 ;; like fla2miz on atomic flas, but dieffrent collecting
-;; leaving it to return empty preds list too,
-;; since we may need it later for Fraenkels
 (let ((res "") vars preds funcs)
   (cond ((listp term)
 	 (let ((ress (mapcar '(lambda (x) (term2miz x sign)) (cdr term)))
@@ -179,7 +177,7 @@ Propsitional by parents.
 		      (res1 (fla2miz lit1 sign))
 		      (vars1 (second res1)))
 		 (cond ((not vars1)   
-;; without vars, happy - simple kustif
+;; without vars, happy - simple justif
 			(setq res (concat mylab fact " by " 
 					  (mapconcat '(lambda (x) 
 							(concat "A" (int-to-string x)))
@@ -196,7 +194,7 @@ Propsitional by parents.
 			  (setq res (concat mylab fact "\nproof let " varsstr ";\n"
 					    inter " by A" (int-to-string (car refs))
 					    ";\nhence thesis by A" 
-					    (int-to-string (second refs)) ";\nend;"))))
+					    (int-to-string (second refs)) ";\nend"))))
 ;; Now result remove the needed var - have to cheat by adding it
 		       (t   
 			(let* ((addvars (set-difference vars1 vars))
@@ -212,7 +210,7 @@ Propsitional by parents.
 					    (int-to-string (car refs)) ";\n"
 					    "hence " (car factandsyms) " by A" 
 					    (int-to-string (second refs)) ";\nend;\n"
-					    "hence thesis;\nend;")))))))
+					    "hence thesis;\nend")))))))
 
 ;; ((eq rule 'resolve) ;; we need to chase only one ancestor
 ;; 	       (let* ((paths (set-difference (cdr justif) refs))
@@ -360,7 +358,7 @@ kind is either 'pred' or 'func'"
 ;; Predicate defs
       (if (< 0 (hash-table-count preds))
 	  (let ((preddefs (create-def-steps (hash-vals preds) "pred")))
-	    (mizinsert def-header)
+	    (mizinsert def-header contra-assumption)
 	    (while preddefs
 	      (mizinsert (car preddefs))
 	      (setq preddefs (cdr preddefs)))
