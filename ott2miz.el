@@ -1,5 +1,5 @@
-;; ott2miz - otter to Mizar translator
-;; $Revision: 1.17 $
+3~;; ott2miz - otter to Mizar translator
+;; $Revision: 1.18 $
 ;; run with: emacs -batch -q -l ott2miz.el --eval '(translate-many "<indexfile>")'
 ;; where <indexfile> is in a directory with all problems (proof objects),
 ;; and it contains listing of their filenames (without directory)
@@ -29,7 +29,7 @@
 (setq max-lisp-eval-depth 2000)
 (setq max-specpdl-size 2000)
 
-(defvar mizar-syms '(and antonym attr as assume be begin being canceled case cases cluster coherence compatibility consider consistency constructors contradiction correctness clusters def deffunc definition definitions defpred environ equals ex existence for func given hence  requirements holds if iff implies irreflexivity it let means mode not notation of or otherwise  over per pred provided qua reconsider redefine reflexivity reserve scheme schemes signature struct such suppose synonym take that thus then theorems vocabulary where associativity commutativity connectedness irreflexivity reflexivity symmetry uniqueness transitivity idempotence asymmetry projectivity involutiveness by from proof now end hereby for ex not & or implies iff st holds being theorem scheme definition thesis empty in))
+(defvar mizar-syms '(and antonym attr as assume be begin being canceled case cases cluster coherence compatibility consider consistency constructors contradiction correctness clusters def deffunc definition definitions defpred environ equals ex existence for func given hence  requirements holds if iff implies irreflexivity it let means mode not notation notations of or otherwise  over per pred provided qua reconsider redefine reflexivity reserve scheme schemes signature struct such suppose synonym take that thus then theorems vocabularies where associativity commutativity connectedness irreflexivity reflexivity symmetry uniqueness transitivity idempotence asymmetry projectivity involutiveness by from proof now end hereby for ex not & or implies iff st holds being theorem scheme definition thesis empty in))
 
 
 
@@ -406,7 +406,7 @@ kind is either 'pred' or 'func'"
     (with-current-buffer mizbuf
       (erase-buffer)
       (mizinsert translation-header)
-      (mizinsert "vocabulary " (upcase articlename) ";\n" "begin\n\n")
+      (mizinsert "vocabularies " (upcase articlename) ";\n" "begin\n\n")
       (if (< 0 (hash-table-count vars))
 	  (mizinsert "reserve " (mapconcat 'identity (hash-vals vars) ",")
 		     "\n for set;\n\n"))
